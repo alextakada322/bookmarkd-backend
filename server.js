@@ -15,6 +15,9 @@ const mongoose = require("mongoose");
 // import middleware
 const cors = require("cors") // cors headers
 const morgan = require("morgan") // logging
+const session = require("express-session")
+const mongoStore = require("connect-mongo")
+const bcrypt = require("bcryptjs")
 
 ///////////////////////////////
 // DATABASE CONNECTION
@@ -23,12 +26,12 @@ const morgan = require("morgan") // logging
 mongoose.connect(MONGODB_URL, {
   useUnifiedTopology: true,
   useNewUrlParser: true,
-});
+})
 // Connection Events
 mongoose.connection
   .on("open", () => console.log("Your are connected to mongoose"))
   .on("close", () => console.log("Your are disconnected from mongoose"))
-  .on("error", (error) => console.log(error));
+  .on("error", (error) => console.log(error))
 
 ///////////////////////////////
 // MODELS
@@ -42,19 +45,28 @@ const BookmarksSchema = new mongoose.Schema({
 const Bookmark = mongoose.model("Bookmark", BookmarksSchema);
 
 const UsersSchema = new mongoose.Schema({
-    username: String,
-    password: String,
+    username: {type: String, required: true, unique: true},
+    password: {type: String, required: true},
     bookmarks: [{type: mongoose.Schema.Types.ObjectId, ref: 'Bookmark'}],
-});
+})
   
 const User = mongoose.model("User", UsersSchema);
 
 ///////////////////////////////
 // MiddleWare
 ////////////////////////////////
-app.use(cors()); // to prevent cors errors, open access to all origins
-app.use(morgan("dev")); // logging
-app.use(express.json()); // parse json bodies
+app.use(cors()) // to prevent cors errors, open access to all origins
+app.use(morgan("dev")) // logging
+app.use(express.json()) // parse json bodies
+
+app.use(
+    session({
+      secret: process.env.SECRET,
+      store: mongoStore.create({ mongoUrl: process.env.MONGODB_URL }),
+      saveUninitialized: false,
+      resave: false,
+    })
+)
 
 ///////////////////////////////
 // ROUTES
@@ -62,8 +74,7 @@ app.use(express.json()); // parse json bodies
 // create a test route
 app.get("/", (req, res) => {
   res.send("hello world");
-});
-
+})
 
 ///////////////////////////////
 // BOOKMARKS ROUTES
@@ -123,52 +134,47 @@ app.delete("/bookmarks/:id", async(req, res) => {
 /////////////////////////////////////////
 // Index Route - get request to /users
 // get us the user
-app.get("/users", async (req, res) => {
-    try {
-        res.json(await User.find({}));
-    } catch (error) {
-        res.status(400).json(error);
-    }
-})
-// Create Route - post request to /users
-// create a user from JSON body
-app.post("/users", async (req, res) => {
-    try {
-        res.json(await User.create(req.body))
-    } catch (error){
-        res.status(400).json({error})
-    }
+app.post("/authenticate", (req, res) => {
+
+    const { username, password } = req.body
+
+    User.findOne({ username }, async (err, user) => {
+        if (!user) {
+            res.status(400).json('No user found')
+            return
+        }
+        
+        const success = await bcrypt.compare(password, user?.password)
+        if (!success) {
+            res.status(400).json('Wrong password')
+            return
+        }
+        
+        req.session.loggedIn = true
+        req.session.username = username
+        res.json({id: user._id, username: user.username})
+    })
 })
 
-// Show Route - get request to /users/:id
-// show a user
-app.get("/users", async (req, res) => {
-    try  {
-        res.json(await User.findById(req.params.id))
-    } catch (error) {
-        res.status(400).json({error})
-    }
+// Create User - post request to /register
+app.post("/register", async (req, res) => {
+    console.log(req.body)
+    User.create(req.body, (err, user) => {
+        if (err) {
+            res.status(400).json('Username taken')
+            return
+        }
+        
+        req.session.loggedIn = true
+        req.session.username = user.username
+        res.json({id: user._id, username: user.username})
+    })
 })
 
-// Update route - put request to /users/:id
-// update a specified user
-app.put("/users/:id", async (req, res) => {
-    try{
-        res.json(await User.findByIdAndUpdate(req.params.id, req.body,
-            {new: true})
-            )
-    } catch (error) {
-        res.status(400).json({error})
-    }
-})
-// Destroy route - delete request to /users/:id
-// delete a specific user
-app.delete("/users/:id", async(req, res) => {
-    try{
-        res.json(await User.findByIdAndRemove(req.params.id));
-    } catch (error) {
-        res.status(400).json({error})
-    }
+app.get("/logout", async (req, res) => {
+    req.session.destroy( err => {
+        if (!err) res.json('Logged out')
+    })
 })
 ///////////////////////////////
 // LISTENER

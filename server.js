@@ -36,20 +36,20 @@ mongoose.connection
 // MODELS
 ////////////////////////////////
 const BookmarksSchema = new mongoose.Schema({
-    creator: String,
+    creator: {type: mongoose.Schema.Types.ObjectId, ref: 'User'},
     url: String,
     name: String,
-})
+});
   
-const Bookmarks = mongoose.model("Bookmarks", BookmarksSchema);
+const Bookmark = mongoose.model("Bookmark", BookmarksSchema);
 
 const UsersSchema = new mongoose.Schema({
     username: {type: String, required: true, unique: true},
     password: {type: String, required: true},
-    bookmarks: Array,
+    bookmarks: [{type: mongoose.Schema.Types.ObjectId, ref: 'Bookmark'}],
 })
-
-const Users = mongoose.model("Users", UsersSchema);
+  
+const User = mongoose.model("User", UsersSchema);
 
 ///////////////////////////////
 // MiddleWare
@@ -82,7 +82,7 @@ app.get("/", (req, res) => {
 // get us the bookmarks
 app.get("/bookmarks", async (req, res) => {
     try {
-        res.json(await Bookmarks.find({}));
+        res.json(await Bookmark.find({}));
     } catch (error) {
         res.status(400).json(error);
     }
@@ -91,7 +91,7 @@ app.get("/bookmarks", async (req, res) => {
 // create a bookmark from JSON body
 app.post("/bookmarks", async (req, res) => {
     try {
-        res.json(await Bookmarks.create(req.body))
+        res.json(await Bookmark.create(req.body))
     } catch (error){
         res.status(400).json({error})
     }
@@ -101,7 +101,7 @@ app.post("/bookmarks", async (req, res) => {
 // show a bookmark
 app.get("/bookmarks", async (req, res) => {
     try  {
-        res.json(await Bookmarks.findById(req.params.id))
+        res.json(await Bookmark.findById(req.params.id))
     } catch (error) {
         res.status(400).json({error})
     }
@@ -111,7 +111,7 @@ app.get("/bookmarks", async (req, res) => {
 // update a specified bookmark
 app.put("/bookmarks/:id", async (req, res) => {
     try{
-        res.json(await Bookmarks.findByIdAndUpdate(req.params.id, req.body,
+        res.json(await Bookmark.findByIdAndUpdate(req.params.id, req.body,
             {new: true})
             )
     } catch (error) {
@@ -122,7 +122,7 @@ app.put("/bookmarks/:id", async (req, res) => {
 // delete a specific bookmark
 app.delete("/bookmarks/:id", async(req, res) => {
     try{
-        res.json(await Bookmarks.findByIdAndRemove(req.params.id));
+        res.json(await Bookmark.findByIdAndRemove(req.params.id));
     } catch (error) {
         res.status(400).json({error})
     }
@@ -154,7 +154,7 @@ app.post("/authenticate", (req, res) => {
 // create a user from JSON body
 app.post("/users", async (req, res) => {
     try {
-        res.json(await Users.create(req.body))
+        res.json(await User.create(req.body))
     } catch (error){
         res.status(400).json({error})
     }
@@ -174,7 +174,7 @@ app.get("/users", async (req, res) => {
 // update a specified user
 app.put("/users/:id", async (req, res) => {
     try{
-        res.json(await Users.findByIdAndUpdate(req.params.id, req.body,
+        res.json(await User.findByIdAndUpdate(req.params.id, req.body,
             {new: true})
             )
     } catch (error) {
@@ -185,7 +185,7 @@ app.put("/users/:id", async (req, res) => {
 // delete a specific user
 app.delete("/users/:id", async(req, res) => {
     try{
-        res.json(await Users.findByIdAndRemove(req.params.id));
+        res.json(await User.findByIdAndRemove(req.params.id));
     } catch (error) {
         res.status(400).json({error})
     }

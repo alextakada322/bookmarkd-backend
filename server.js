@@ -15,6 +15,8 @@ const mongoose = require("mongoose");
 // import middleware
 const cors = require("cors") // cors headers
 const morgan = require("morgan") // logging
+const session = require("express-session")
+const mongoStore = require("connect-mongo")
 
 ///////////////////////////////
 // DATABASE CONNECTION
@@ -23,12 +25,12 @@ const morgan = require("morgan") // logging
 mongoose.connect(MONGODB_URL, {
   useUnifiedTopology: true,
   useNewUrlParser: true,
-});
+})
 // Connection Events
 mongoose.connection
   .on("open", () => console.log("Your are connected to mongoose"))
   .on("close", () => console.log("Your are disconnected from mongoose"))
-  .on("error", (error) => console.log(error));
+  .on("error", (error) => console.log(error))
 
 ///////////////////////////////
 // MODELS
@@ -37,24 +39,33 @@ const BookmarksSchema = new mongoose.Schema({
     creator: String,
     url: String,
     name: String,
-  });
+})
   
 const Bookmarks = mongoose.model("Bookmarks", BookmarksSchema);
 
 const UsersSchema = new mongoose.Schema({
-    username: String,
-    password: String,
+    username: {type: String, required: true, unique: true},
+    password: {type: String, required: true},
     bookmarks: Array,
-  });
-  
+})
+
 const Users = mongoose.model("Users", UsersSchema);
 
 ///////////////////////////////
 // MiddleWare
 ////////////////////////////////
-app.use(cors()); // to prevent cors errors, open access to all origins
-app.use(morgan("dev")); // logging
-app.use(express.json()); // parse json bodies
+app.use(cors()) // to prevent cors errors, open access to all origins
+app.use(morgan("dev")) // logging
+app.use(express.json()) // parse json bodies
+
+app.use(
+    session({
+      secret: process.env.SECRET,
+      store: mongoStore.create({ mongoUrl: process.env.MONGODB_URL }),
+      saveUninitialized: true,
+      resave: false,
+    })
+)
 
 ///////////////////////////////
 // ROUTES
@@ -62,8 +73,7 @@ app.use(express.json()); // parse json bodies
 // create a test route
 app.get("/", (req, res) => {
   res.send("hello world");
-});
-
+})
 
 ///////////////////////////////
 // BOOKMARKS ROUTES
@@ -123,12 +133,22 @@ app.delete("/bookmarks/:id", async(req, res) => {
 /////////////////////////////////////////
 // Index Route - get request to /users
 // get us the user
-app.get("/users", async (req, res) => {
-    try {
-        res.json(await Users.find({}));
-    } catch (error) {
-        res.status(400).json(error);
-    }
+app.post("/authenticate", (req, res) => {
+
+    const { username, password } = req.body
+
+    User.findOne({ username }, async (err, user) => {
+        if (!user) {
+            res.status(400).json('No user found')
+        }
+        else {
+            const res = await bcrypt.compare(password, user.password)
+            if (!res) res.status(400).json('Wrong password')
+            else {
+                res.json(user)
+            }
+        }
+    })
 })
 // Create Route - post request to /users
 // create a user from JSON body
@@ -144,7 +164,7 @@ app.post("/users", async (req, res) => {
 // show a user
 app.get("/users", async (req, res) => {
     try  {
-        res.json(await Users.findById(req.params.id))
+        res.json(await Users.find({}))
     } catch (error) {
         res.status(400).json({error})
     }

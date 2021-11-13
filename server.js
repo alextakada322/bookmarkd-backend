@@ -54,7 +54,7 @@ const User = mongoose.model("User", UsersSchema);
 ///////////////////////////////
 // MiddleWare
 ////////////////////////////////
-app.use(cors()) // to prevent cors errors, open access to all origins
+app.use(cors({credentials: true, origin: process.env.CLIENT_ORIGIN_URL}))
 app.use(morgan("dev")) // logging
 app.use(express.json()) // parse json bodies
 
@@ -62,6 +62,7 @@ app.use(
     session({
       secret: process.env.SECRET,
       store: mongoStore.create({ mongoUrl: process.env.MONGODB_URL }),
+      cookie: { secure: false },
       saveUninitialized: false,
       resave: false,
     })
@@ -74,7 +75,6 @@ app.use(
 // Index Route - get request to /bookmarks
 // get us the bookmarks
 app.get("/bookmarks", async (req, res) => {
-
     const username = req.session.username
     try {
         res.json(await Bookmark.find({users: username}));

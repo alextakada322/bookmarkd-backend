@@ -17,6 +17,7 @@ const cors = require("cors") // cors headers
 const morgan = require("morgan") // logging
 const session = require("express-session")
 const mongoStore = require("connect-mongo")
+const bcrypt = require("bcryptjs")
 
 ///////////////////////////////
 // DATABASE CONNECTION
@@ -62,7 +63,7 @@ app.use(
     session({
       secret: process.env.SECRET,
       store: mongoStore.create({ mongoUrl: process.env.MONGODB_URL }),
-      saveUninitialized: true,
+      saveUninitialized: false,
       resave: false,
     })
 )
@@ -140,55 +141,40 @@ app.post("/authenticate", (req, res) => {
     User.findOne({ username }, async (err, user) => {
         if (!user) {
             res.status(400).json('No user found')
+            return
         }
-        else {
-            const res = await bcrypt.compare(password, user.password)
-            if (!res) res.status(400).json('Wrong password')
-            else {
-                res.json(user)
-            }
+        
+        const success = await bcrypt.compare(password, user?.password)
+        if (!success) {
+            res.status(400).json('Wrong password')
+            return
         }
+        
+        req.session.loggedIn = true
+        req.session.username = username
+        res.json({id: user._id, username: user.username})
     })
 })
-// Create Route - post request to /users
-// create a user from JSON body
-app.post("/users", async (req, res) => {
-    try {
-        res.json(await User.create(req.body))
-    } catch (error){
-        res.status(400).json({error})
-    }
+
+// Create User - post request to /register
+app.post("/register", async (req, res) => {
+    console.log(req.body)
+    User.create(req.body, (err, user) => {
+        if (err) {
+            res.status(400).json('Username taken')
+            return
+        }
+        
+        req.session.loggedIn = true
+        req.session.username = user.username
+        res.json({id: user._id, username: user.username})
+    })
 })
 
-// Show Route - get request to /users/:id
-// show a user
-app.get("/users", async (req, res) => {
-    try  {
-        res.json(await Users.find({}))
-    } catch (error) {
-        res.status(400).json({error})
-    }
-})
-
-// Update route - put request to /users/:id
-// update a specified user
-app.put("/users/:id", async (req, res) => {
-    try{
-        res.json(await User.findByIdAndUpdate(req.params.id, req.body,
-            {new: true})
-            )
-    } catch (error) {
-        res.status(400).json({error})
-    }
-})
-// Destroy route - delete request to /users/:id
-// delete a specific user
-app.delete("/users/:id", async(req, res) => {
-    try{
-        res.json(await User.findByIdAndRemove(req.params.id));
-    } catch (error) {
-        res.status(400).json({error})
-    }
+app.get("/logout", async (req, res) => {
+    req.session.destroy( err => {
+        if (!err) res.json('Logged out')
+    })
 })
 ///////////////////////////////
 // LISTENER

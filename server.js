@@ -101,8 +101,6 @@ app.get("/bookmarks/explore", async (req, res) => {
 app.post("/bookmarks", async (req, res) => {
 
     let existing = await Bookmark.findOne({name: req.body.name})
-    console.log(existing)
-    console.log(req.session)
 
     if (existing) {
         if (existing.users.includes(req.session.username)) {
@@ -204,6 +202,7 @@ app.get("/logout", async (req, res) => {
         if (!err) res.json('Logged out')
     })
 })
+
 ///////////////////////////////
 // LISTENER
 ////////////////////////////////

@@ -37,9 +37,9 @@ mongoose.connection
 // MODELS
 ////////////////////////////////
 const BookmarksSchema = new mongoose.Schema({
-    creator: {type: mongoose.Schema.Types.ObjectId, ref: 'User'},
-    url: String,
-    name: String,
+    url: {type: String, required: true},
+    name: {type: String, required: true, unique: true},
+    users: [String]
 });
   
 const Bookmark = mongoose.model("Bookmark", BookmarksSchema);
@@ -47,7 +47,6 @@ const Bookmark = mongoose.model("Bookmark", BookmarksSchema);
 const UsersSchema = new mongoose.Schema({
     username: {type: String, required: true, unique: true},
     password: {type: String, required: true},
-    bookmarks: [{type: mongoose.Schema.Types.ObjectId, ref: 'Bookmark'}],
 })
   
 const User = mongoose.model("User", UsersSchema);
@@ -69,38 +68,64 @@ app.use(
 )
 
 ///////////////////////////////
-// ROUTES
-////////////////////////////////
-// create a test route
-app.get("/", (req, res) => {
-  res.send("hello world");
-})
-
-///////////////////////////////
 // BOOKMARKS ROUTES
 ///////////////////////////////
+
 // Index Route - get request to /bookmarks
 // get us the bookmarks
 app.get("/bookmarks", async (req, res) => {
+
+    const username = req.session.username
     try {
-        res.json(await Bookmark.find({}));
+        res.json(await Bookmark.find({users: username}));
     } catch (error) {
         res.status(400).json(error);
     }
 })
+
+// Index Route - get request to /bookmarks
+// get us the bookmarks
+app.get("/bookmarks/explore", async (req, res) => {
+
+    const username = req.session.username
+
+    try {
+        res.json(await Bookmark.find({users: {$ne: username}}));
+    } catch (error) {
+        res.status(400).json(error);
+    }
+})
+
 // Create Route - post request to /bookmarks
 // create a bookmark from JSON body
 app.post("/bookmarks", async (req, res) => {
-    try {
-        res.json(await Bookmark.create(req.body))
-    } catch (error){
-        res.status(400).json({error})
+
+    let existing = await Bookmark.findOne({name: req.body.name})
+
+    if (existing) {
+        if (existing.users.includes(req.session.username)) {
+            res.json(existing)
+        }
+        else {
+            existing.users.push(req.session.username)
+            Bookmark.updateOne(existing)
+            res.json(existing)
+        }
     }
+    else {
+        req.body.users = [req.session.username]
+        try {
+            res.json(await Bookmark.create(req.body))
+        } catch (error){
+            res.status(400).json({error})
+        }
+    }
+
 })
 
 // Show Route - get request to /bookmarks/:id
 // show a bookmark
-app.get("/bookmarks", async (req, res) => {
+app.get("/bookmarks/:id", async (req, res) => {
     try  {
         res.json(await Bookmark.findById(req.params.id))
     } catch (error) {
@@ -112,13 +137,12 @@ app.get("/bookmarks", async (req, res) => {
 // update a specified bookmark
 app.put("/bookmarks/:id", async (req, res) => {
     try{
-        res.json(await Bookmark.findByIdAndUpdate(req.params.id, req.body,
-            {new: true})
-            )
+        res.json(await Bookmark.findByIdAndUpdate(req.params.id, req.body, {new: true}))
     } catch (error) {
         res.status(400).json({error})
     }
 })
+
 // Destroy route - delete request to /bookmarks/:id
 // delete a specific bookmark
 app.delete("/bookmarks/:id", async(req, res) => {
@@ -158,7 +182,9 @@ app.post("/authenticate", (req, res) => {
 
 // Create User - post request to /register
 app.post("/register", async (req, res) => {
-    console.log(req.body)
+
+    req.body.password = await bcrypt.hash(req.body.password, await bcrypt.genSalt(10))
+
     User.create(req.body, (err, user) => {
         if (err) {
             res.status(400).json('Username taken')
@@ -176,6 +202,7 @@ app.get("/logout", async (req, res) => {
         if (!err) res.json('Logged out')
     })
 })
+
 ///////////////////////////////
 // LISTENER
 ////////////////////////////////

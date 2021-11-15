@@ -83,6 +83,16 @@ app.get("/bookmarks", async (req, res) => {
     }
 })
 
+// Index Route - get request to /bookmarks/all
+// get all the bookmarks
+app.get("/bookmarks/all", async (req, res) => {
+    try {
+        res.json(await Bookmark.find({}));
+    } catch (error) {
+        res.status(400).json(error);
+    }
+})
+
 // Index Route - get request to /bookmarks
 // get us the bookmarks
 app.get("/bookmarks/explore", async (req, res) => {
@@ -108,8 +118,7 @@ app.post("/bookmarks", async (req, res) => {
         }
         else {
             existing.users.push(req.session.username)
-            Bookmark.updateOne(existing)
-            res.json(existing)
+            res.json(await Bookmark.findByIdAndUpdate(existing._id, existing))
         }
     }
     else {

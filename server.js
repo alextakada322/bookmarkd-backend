@@ -96,9 +96,7 @@ app.get("/bookmarks/all", async (req, res) => {
 // Index Route - get request to /bookmarks
 // get us the bookmarks
 app.get("/bookmarks/explore", async (req, res) => {
-
     const username = req.session.username
-
     try {
         res.json(await Bookmark.find({users: {$ne: username}}));
     } catch (error) {
@@ -110,16 +108,14 @@ app.get("/bookmarks/explore", async (req, res) => {
 // create a bookmark from JSON body
 app.post("/bookmarks", async (req, res) => {
 
-    let existing = await Bookmark.findOne({name: req.body.name})
+    const existing = await Bookmark.findOne({name: req.body.name})
 
     if (existing) {
-        if (existing.users.includes(req.session.username)) {
-            res.json(existing)
-        }
-        else {
+        if (!existing.users.includes(req.session.username)) {
             existing.users.push(req.session.username)
-            res.json(await Bookmark.findByIdAndUpdate(existing._id, existing))
         }
+        existing.url = req.body.url
+        res.json(await Bookmark.findByIdAndUpdate(existing._id, existing))
     }
     else {
         req.body.users = [req.session.username]
@@ -155,11 +151,10 @@ app.put("/bookmarks/:id", async (req, res) => {
 // Destroy route - delete request to /bookmarks/:id
 // delete a specific bookmark
 app.delete("/bookmarks/:id", async(req, res) => {
-    try{
-        res.json(await Bookmark.findByIdAndRemove(req.params.id));
-    } catch (error) {
-        res.status(400).json({error})
-    }
+    const existing = await Bookmark.findById(req.params.id)
+    const username = req.session.username
+    existing.users = [...existing.users.filter(user => user !== username)]
+    res.json(await Bookmark.findByIdAndUpdate(req.params.id, existing, {new: true}));
 })
 
 /////////////////////////////////////////

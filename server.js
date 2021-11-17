@@ -37,25 +37,24 @@ mongoose.connection
 // MODELS
 ////////////////////////////////
 const BookmarksSchema = new mongoose.Schema({
-    creator: {type: mongoose.Schema.Types.ObjectId, ref: 'User'},
-    url: String,
-    name: String,
+    url: {type: String, required: true},
+    name: {type: String, required: true, unique: true},
+    users: [String]
 });
-  
+
 const Bookmark = mongoose.model("Bookmark", BookmarksSchema);
 
 const UsersSchema = new mongoose.Schema({
     username: {type: String, required: true, unique: true},
     password: {type: String, required: true},
-    bookmarks: [{type: mongoose.Schema.Types.ObjectId, ref: 'Bookmark'}],
 })
-  
+
 const User = mongoose.model("User", UsersSchema);
 
 ///////////////////////////////
 // MiddleWare
 ////////////////////////////////
-app.use(cors()) // to prevent cors errors, open access to all origins
+app.use(cors({credentials: true, origin: process.env.CLIENT_ORIGIN_URL}))
 app.use(morgan("dev")) // logging
 app.use(express.json()) // parse json bodies
 
@@ -63,44 +62,88 @@ app.use(
     session({
       secret: process.env.SECRET,
       store: mongoStore.create({ mongoUrl: process.env.MONGODB_URL }),
+      cookie: { secure: false },
       saveUninitialized: false,
       resave: false,
     })
 )
 
-///////////////////////////////
-// ROUTES
-////////////////////////////////
-// create a test route
-app.get("/", (req, res) => {
-  res.send("hello world");
-})
+const requireAuth = (req, res, next) => {
+    if (req.session.loggedIn) {
+        next();
+    } else {
+        res.status(403).send('Not Authorized');
+    }
+};
+
+app.get('/', requireAuth, (req, res) => {
+    // normal function goes here
+});
+
 
 ///////////////////////////////
 // BOOKMARKS ROUTES
 ///////////////////////////////
+
 // Index Route - get request to /bookmarks
 // get us the bookmarks
-app.get("/bookmarks", async (req, res) => {
+app.get("/bookmarks", requireAuth, async (req, res) => {
+    const username = req.session.username
+    try {
+        res.json(await Bookmark.find({users: username}));
+    } catch (error) {
+        res.status(400).json(error);
+    }
+})
+
+// Index Route - get request to /bookmarks/all
+// get all the bookmarks
+app.get("/bookmarks/all", requireAuth, async (req, res) => {
     try {
         res.json(await Bookmark.find({}));
     } catch (error) {
         res.status(400).json(error);
     }
 })
+
+// Index Route - get request to /bookmarks
+// get us the bookmarks
+app.get("/bookmarks/explore", requireAuth, async (req, res) => {
+    const username = req.session.username
+    try {
+        res.json(await Bookmark.find({users: {$ne: username}}));
+    } catch (error) {
+        res.status(400).json(error);
+    }
+})
+
 // Create Route - post request to /bookmarks
 // create a bookmark from JSON body
-app.post("/bookmarks", async (req, res) => {
-    try {
-        res.json(await Bookmark.create(req.body))
-    } catch (error){
-        res.status(400).json({error})
+app.post("/bookmarks", requireAuth, async (req, res) => {
+
+    const existing = await Bookmark.findOne({name: req.body.name})
+
+    if (existing) {
+        if (!existing.users.includes(req.session.username)) {
+            existing.users.push(req.session.username)
+        }
+        existing.url = req.body.url
+        res.json(await Bookmark.findByIdAndUpdate(existing._id, existing))
     }
+    else {
+        req.body.users = [req.session.username]
+        try {
+            res.json(await Bookmark.create(req.body))
+        } catch (error){
+            res.status(400).json({error})
+        }
+    }
+
 })
 
 // Show Route - get request to /bookmarks/:id
 // show a bookmark
-app.get("/bookmarks", async (req, res) => {
+app.get("/bookmarks/:id", requireAuth, async (req, res) => {
     try  {
         res.json(await Bookmark.findById(req.params.id))
     } catch (error) {
@@ -110,23 +153,21 @@ app.get("/bookmarks", async (req, res) => {
 
 // Update route - put request to /bookmarks/:id
 // update a specified bookmark
-app.put("/bookmarks/:id", async (req, res) => {
+app.put("/bookmarks/:id", requireAuth, async (req, res) => {
     try{
-        res.json(await Bookmark.findByIdAndUpdate(req.params.id, req.body,
-            {new: true})
-            )
+        res.json(await Bookmark.findByIdAndUpdate(req.params.id, req.body, {new: true}))
     } catch (error) {
         res.status(400).json({error})
     }
 })
+
 // Destroy route - delete request to /bookmarks/:id
 // delete a specific bookmark
-app.delete("/bookmarks/:id", async(req, res) => {
-    try{
-        res.json(await Bookmark.findByIdAndRemove(req.params.id));
-    } catch (error) {
-        res.status(400).json({error})
-    }
+app.delete("/bookmarks/:id", requireAuth, async(req, res) => {
+    const existing = await Bookmark.findById(req.params.id)
+    const username = req.session.username
+    existing.users = [...existing.users.filter(user => user !== username)]
+    res.json(await Bookmark.findByIdAndUpdate(req.params.id, existing, {new: true}));
 })
 
 /////////////////////////////////////////
@@ -143,13 +184,13 @@ app.post("/authenticate", (req, res) => {
             res.status(400).json('No user found')
             return
         }
-        
+
         const success = await bcrypt.compare(password, user?.password)
         if (!success) {
             res.status(400).json('Wrong password')
             return
         }
-        
+
         req.session.loggedIn = true
         req.session.username = username
         res.json({id: user._id, username: user.username})
@@ -158,13 +199,15 @@ app.post("/authenticate", (req, res) => {
 
 // Create User - post request to /register
 app.post("/register", async (req, res) => {
-    console.log(req.body)
+
+    req.body.password = await bcrypt.hash(req.body.password, await bcrypt.genSalt(10))
+
     User.create(req.body, (err, user) => {
         if (err) {
             res.status(400).json('Username taken')
             return
         }
-        
+
         req.session.loggedIn = true
         req.session.username = user.username
         res.json({id: user._id, username: user.username})
@@ -176,6 +219,7 @@ app.get("/logout", async (req, res) => {
         if (!err) res.json('Logged out')
     })
 })
+
 ///////////////////////////////
 // LISTENER
 ////////////////////////////////

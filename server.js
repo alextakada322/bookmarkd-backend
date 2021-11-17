@@ -41,14 +41,14 @@ const BookmarksSchema = new mongoose.Schema({
     name: {type: String, required: true, unique: true},
     users: [String]
 });
-  
+
 const Bookmark = mongoose.model("Bookmark", BookmarksSchema);
 
 const UsersSchema = new mongoose.Schema({
     username: {type: String, required: true, unique: true},
     password: {type: String, required: true},
 })
-  
+
 const User = mongoose.model("User", UsersSchema);
 
 ///////////////////////////////
@@ -68,13 +68,26 @@ app.use(
     })
 )
 
+const requireAuth = (req, res, next) => {
+    if (req.session.loggedIn) {
+        next();
+    } else {
+        res.status(403).send('Not Authorized');
+    }
+};
+
+app.get('/', requireAuth, (req, res) => {
+    // normal function goes here
+});
+
+
 ///////////////////////////////
 // BOOKMARKS ROUTES
 ///////////////////////////////
 
 // Index Route - get request to /bookmarks
 // get us the bookmarks
-app.get("/bookmarks", async (req, res) => {
+app.get("/bookmarks", requireAuth, async (req, res) => {
     const username = req.session.username
     try {
         res.json(await Bookmark.find({users: username}));
@@ -85,7 +98,7 @@ app.get("/bookmarks", async (req, res) => {
 
 // Index Route - get request to /bookmarks/all
 // get all the bookmarks
-app.get("/bookmarks/all", async (req, res) => {
+app.get("/bookmarks/all", requireAuth, async (req, res) => {
     try {
         res.json(await Bookmark.find({}));
     } catch (error) {
@@ -95,7 +108,7 @@ app.get("/bookmarks/all", async (req, res) => {
 
 // Index Route - get request to /bookmarks
 // get us the bookmarks
-app.get("/bookmarks/explore", async (req, res) => {
+app.get("/bookmarks/explore", requireAuth, async (req, res) => {
     const username = req.session.username
     try {
         res.json(await Bookmark.find({users: {$ne: username}}));
@@ -106,7 +119,7 @@ app.get("/bookmarks/explore", async (req, res) => {
 
 // Create Route - post request to /bookmarks
 // create a bookmark from JSON body
-app.post("/bookmarks", async (req, res) => {
+app.post("/bookmarks", requireAuth, async (req, res) => {
 
     const existing = await Bookmark.findOne({name: req.body.name})
 
@@ -130,7 +143,7 @@ app.post("/bookmarks", async (req, res) => {
 
 // Show Route - get request to /bookmarks/:id
 // show a bookmark
-app.get("/bookmarks/:id", async (req, res) => {
+app.get("/bookmarks/:id", requireAuth, async (req, res) => {
     try  {
         res.json(await Bookmark.findById(req.params.id))
     } catch (error) {
@@ -140,7 +153,7 @@ app.get("/bookmarks/:id", async (req, res) => {
 
 // Update route - put request to /bookmarks/:id
 // update a specified bookmark
-app.put("/bookmarks/:id", async (req, res) => {
+app.put("/bookmarks/:id", requireAuth, async (req, res) => {
     try{
         res.json(await Bookmark.findByIdAndUpdate(req.params.id, req.body, {new: true}))
     } catch (error) {
@@ -150,7 +163,7 @@ app.put("/bookmarks/:id", async (req, res) => {
 
 // Destroy route - delete request to /bookmarks/:id
 // delete a specific bookmark
-app.delete("/bookmarks/:id", async(req, res) => {
+app.delete("/bookmarks/:id", requireAuth, async(req, res) => {
     const existing = await Bookmark.findById(req.params.id)
     const username = req.session.username
     existing.users = [...existing.users.filter(user => user !== username)]
@@ -171,13 +184,13 @@ app.post("/authenticate", (req, res) => {
             res.status(400).json('No user found')
             return
         }
-        
+
         const success = await bcrypt.compare(password, user?.password)
         if (!success) {
             res.status(400).json('Wrong password')
             return
         }
-        
+
         req.session.loggedIn = true
         req.session.username = username
         res.json({id: user._id, username: user.username})
@@ -194,7 +207,7 @@ app.post("/register", async (req, res) => {
             res.status(400).json('Username taken')
             return
         }
-        
+
         req.session.loggedIn = true
         req.session.username = user.username
         res.json({id: user._id, username: user.username})

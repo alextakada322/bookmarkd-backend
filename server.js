@@ -5,7 +5,7 @@
 require("dotenv").config();
 // pull PORT from .env, give default value of 3000
 // pull MONGODB_URL from .env
-const { PORT = 3000, MONGODB_URL } = process.env;
+const { PORT = 3000, MONGODB_URL, SECRET, CLIENT_ORIGIN_URL } = process.env;
 // import express
 const express = require("express");
 // create application object
@@ -15,9 +15,8 @@ const mongoose = require("mongoose");
 // import middleware
 const cors = require("cors") // cors headers
 const morgan = require("morgan") // logging
-const session = require("express-session")
-const mongoStore = require("connect-mongo")
 const bcrypt = require("bcryptjs")
+const jwt = require("jsonwebtoken")
 
 ///////////////////////////////
 // DATABASE CONNECTION
@@ -54,32 +53,29 @@ const User = mongoose.model("User", UsersSchema);
 ///////////////////////////////
 // MiddleWare
 ////////////////////////////////
-app.use(cors({credentials: true, origin: process.env.CLIENT_ORIGIN_URL}))
+app.use(cors({credentials: true, origin: CLIENT_ORIGIN_URL}))
 app.use(morgan("dev")) // logging
 app.use(express.json()) // parse json bodies
 
-app.use(
-    session({
-      secret: process.env.SECRET,
-      store: mongoStore.create({ mongoUrl: process.env.MONGODB_URL }),
-      cookie: { secure: false },
-      saveUninitialized: false,
-      resave: false,
-    })
-)
-
 const requireAuth = (req, res, next) => {
-    if (req.session.loggedIn) {
-        next();
-    } else {
-        res.status(403).send('Not Authorized');
+    try {
+        //token: "jlkjsldkjsldkfjsldfjsl"
+        if (req.headers.token) {
+          const token = req.headers.token
+          const payload = jwt.verify(token, SECRET)
+          if (payload) {
+            req.payload = payload
+            next()
+          } else {
+            res.status(403).json({ error: "VERIFICATION FAILED OR NO PAYLOAD" })
+          }
+        } else {
+          res.status(403).json({ error: "NO AUTHORIZATION HEADER" })
+        }
+      } catch (error) {
+        res.status(403).json({ error })
     }
-};
-
-app.get('/', requireAuth, (req, res) => {
-    // normal function goes here
-});
-
+}
 
 ///////////////////////////////
 // BOOKMARKS ROUTES
@@ -88,7 +84,7 @@ app.get('/', requireAuth, (req, res) => {
 // Index Route - get request to /bookmarks
 // get us the bookmarks
 app.get("/bookmarks", requireAuth, async (req, res) => {
-    const username = req.session.username
+    const username = req.payload.username
     try {
         res.json(await Bookmark.find({users: username}));
     } catch (error) {
@@ -109,7 +105,7 @@ app.get("/bookmarks/all", requireAuth, async (req, res) => {
 // Index Route - get request to /bookmarks
 // get us the bookmarks
 app.get("/bookmarks/explore", requireAuth, async (req, res) => {
-    const username = req.session.username
+    const username = req.payload.username
     try {
         res.json(await Bookmark.find({users: {$ne: username}}));
     } catch (error) {
@@ -122,16 +118,17 @@ app.get("/bookmarks/explore", requireAuth, async (req, res) => {
 app.post("/bookmarks", requireAuth, async (req, res) => {
 
     const existing = await Bookmark.findOne({name: req.body.name})
+    const username = req.payload.username
 
     if (existing) {
-        if (!existing.users.includes(req.session.username)) {
-            existing.users.push(req.session.username)
+        if (!existing.users.includes(username)) {
+            existing.users.push(username)
         }
         existing.url = req.body.url
         res.json(await Bookmark.findByIdAndUpdate(existing._id, existing))
     }
     else {
-        req.body.users = [req.session.username]
+        req.body.users = [username]
         try {
             res.json(await Bookmark.create(req.body))
         } catch (error){
@@ -165,7 +162,7 @@ app.put("/bookmarks/:id", requireAuth, async (req, res) => {
 // delete a specific bookmark
 app.delete("/bookmarks/:id", requireAuth, async(req, res) => {
     const existing = await Bookmark.findById(req.params.id)
-    const username = req.session.username
+    const username = req.payload.username
     existing.users = [...existing.users.filter(user => user !== username)]
     res.json(await Bookmark.findByIdAndUpdate(req.params.id, existing, {new: true}));
 })
@@ -191,9 +188,8 @@ app.post("/authenticate", (req, res) => {
             return
         }
 
-        req.session.loggedIn = true
-        req.session.username = username
-        res.json({id: user._id, username: user.username})
+        const token = await jwt.sign({ username }, SECRET);
+        res.json({token, username})
     })
 })
 
@@ -208,15 +204,9 @@ app.post("/register", async (req, res) => {
             return
         }
 
-        req.session.loggedIn = true
-        req.session.username = user.username
-        res.json({id: user._id, username: user.username})
-    })
-})
-
-app.get("/logout", async (req, res) => {
-    req.session.destroy( err => {
-        if (!err) res.json('Logged out')
+        const username = user.username
+        const token = jwt.sign({username: username}, SECRET);
+        res.json({token, username})
     })
 })
 
